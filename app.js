@@ -1,28 +1,27 @@
 const express = require("express");
-const mongoose = require("mongoose");
+const { errorHandler, notFoundHandler } = require("./middleware/errorHandler");
 
-const productRoutes = require("./routes/productRoutes");
-const userRoutes    = require("./routes/userRoutes");
-const orderRoutes   = require("./routes/orderRoutes");
-const cartRoutes    = require("./routes/cartRoutes");
+const productRoutes = require("./routes/products");
+const userRoutes = require("./routes/users");
+const cartRoutes = require("./routes/cart");
+const orderRoutes = require("./routes/orders");
 
 const app = express();
 app.use(express.json());
 
-// ── Connect to MongoDB ──────────────────────────
-mongoose.connect("mongodb://localhost:27017/practical6", {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log("MongoDB Connected"))
-.catch((err) => console.error("MongoDB Error:", err));
+// Routes
+app.use("/products", productRoutes);
+app.use("/users", userRoutes);
+app.use("/cart", cartRoutes);
+app.use("/orders", orderRoutes);
 
-// ── Routes ──────────────────────────────────────
-app.use("/api/products", productRoutes);
-app.use("/api/users",    userRoutes);
-app.use("/api/orders",   orderRoutes);
-app.use("/api/cart",     cartRoutes);
+// 404 catch-all
+app.use(notFoundHandler);
 
-// ── Start Server ────────────────────────────────
-const PORT = 3000;
-app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+// Global error handler
+app.use(errorHandler);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
+});
