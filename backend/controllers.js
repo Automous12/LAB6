@@ -1,99 +1,191 @@
-const { products, users, orders, newId } = require("./models");
+const Product   = require("./models/Product");
+const User      = require("./models/User");
+const Order     = require("./models/Order");
+const jwt       = require("jsonwebtoken");
+const cloudinary = require("cloudinary").v2;
+
+// ── helper: upload buffer to Cloudinary ──────────────────────────────────────
+const uploadToCloudinary = (buffer) =>
+  new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "luxeshop" },
+      (err, result) => (err ? reject(err) : resolve(result))
+    );
+    stream.end(buffer);
+  });
 
 // ════════════════════════════════════════════════
 //  PRODUCT CONTROLLERS
 // ════════════════════════════════════════════════
 
-const getAllProducts = (req, res) => {
-  const { category } = req.query;
-  const result = category ? products.filter(p => p.category === category) : products;
-  res.json(result);
+const getAllProducts = async (req, res) => {
+  try {
+    const { category } = req.query;
+    const filter = category ? { category } : {};
+    res.json(await Product.find(filter));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const getProductById = (req, res) => {
-  const product = products.find(p => p._id === req.params.id);
-  if (!product) return res.status(404).json({ error: "Product not found" });
-  res.json(product);
+const getProductById = async (req, res) => {
+  try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    res.json(product);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const createProduct = (req, res) => {
-  const product = { _id: newId(), ...req.body };
-  products.push(product);
-  res.status(201).json(product);
+const createProduct = async (req, res) => {
+  try {
+    let imageUrl = req.body.image || "";
+    if (req.file) {
+      const result = await uploadToCloudinary(req.file.buffer);
+      imageUrl = result.secure_url;
+    }
+    const product = await Product.create({
+      title:       req.body.title,
+      description: req.body.description || "",
+      price:       parseFloat(req.body.price),
+      category:    req.body.category,
+      image:       imageUrl,
+    });
+    res.status(201).json(product);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const updateProduct = (req, res) => {
-  const idx = products.findIndex(p => p._id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Product not found" });
-  products[idx] = { ...products[idx], ...req.body };
-  res.json(products[idx]);
+const updateProduct = async (req, res) => {
+  try {
+    const updateData = {
+      title:       req.body.title,
+      description: req.body.description,
+      price:       parseFloat(req.body.price),
+      category:    req.body.category,
+    };
+    if (req.file) {
+      const result = await uploadToCloudinary(req.file.buffer);
+      updateData.image = result.secure_url;
+    } else if (req.body.image) {
+      updateData.image = req.body.image;
+    }
+    const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    res.json(product);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const deleteProduct = (req, res) => {
-  const idx = products.findIndex(p => p._id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Product not found" });
-  products.splice(idx, 1);
-  res.json({ message: "Product deleted" });
+const deleteProduct = async (req, res) => {
+  try {
+    const product = await Product.findByIdAndDelete(req.params.id);
+    if (!product) return res.status(404).json({ error: "Product not found" });
+    res.json({ message: "Product deleted" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const getCategories = (req, res) => {
-  const cats = [...new Set(products.map(p => p.category))];
-  res.json(cats);
+const getCategories = async (req, res) => {
+  try {
+    res.json(await Product.distinct("category"));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
 // ════════════════════════════════════════════════
-//  USER CONTROLLERS
+//  AUTH CONTROLLERS
 // ════════════════════════════════════════════════
 
-const registerUser = (req, res) => {
-  const { name, email, password } = req.body;
-  if (users.find(u => u.email === email))
-    return res.status(400).json({ error: "Email already registered" });
-  const user = { _id: newId(), name, email, password };
-  users.push(user);
-  res.status(201).json({ message: "User registered", userId: user._id });
+const sendOtp = async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: "Phone number required" });
+
+    // Fixed OTP for demo — always 0000
+    await User.findOneAndUpdate(
+      { phone },
+      { phone, otp: "0000", otpExpiry: new Date(Date.now() + 10 * 60 * 1000) },
+      { upsert: true, new: true }
+    );
+
+    res.json({ message: "OTP sent (use 0000 for demo)" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const loginUser = (req, res) => {
-  const { email, password } = req.body;
-  const user = users.find(u => u.email === email && u.password === password);
-  if (!user) return res.status(401).json({ error: "Invalid credentials" });
-  res.json({ message: "Login successful", userId: user._id, name: user.name });
-};
+const verifyOtp = async (req, res) => {
+  try {
+    const { phone, otp } = req.body;
+    if (!phone || !otp) return res.status(400).json({ error: "Phone and OTP required" });
 
-const getAllUsers = (req, res) => {
-  res.json(users.map(({ password, ...u }) => u));
+    const user = await User.findOne({ phone });
+    if (!user)            return res.status(404).json({ error: "Request OTP first" });
+    if (user.otp !== otp) return res.status(400).json({ error: "Invalid OTP" });
+    if (user.otpExpiry < new Date()) return res.status(400).json({ error: "OTP expired" });
+
+    // Clear OTP after use
+    user.otp = undefined;
+    user.otpExpiry = undefined;
+    await user.save();
+
+    const isAdmin = phone === process.env.ADMIN_PHONE;
+    const token   = jwt.sign({ userId: user._id, phone, isAdmin }, process.env.JWT_SECRET, { expiresIn: "7d" });
+
+    res.json({ token, user: { id: user._id, phone, name: user.name, isAdmin } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
 // ════════════════════════════════════════════════
 //  ORDER CONTROLLERS
 // ════════════════════════════════════════════════
 
-const createOrder = (req, res) => {
-  const order = { _id: newId(), status: "pending", createdAt: new Date(), ...req.body };
-  orders.push(order);
-  res.status(201).json({ message: "Order placed!", orderId: order._id, order });
+const createOrder = async (req, res) => {
+  try {
+    const data = { ...req.body };
+    if (req.user) data.userId = req.user.userId;   // attach user if logged in
+    const order = await Order.create(data);
+    res.status(201).json({ message: "Order placed!", orderId: order._id, order });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const getAllOrders = (req, res) => {
-  res.json([...orders].reverse());
+const getAllOrders = async (req, res) => {
+  try {
+    res.json(await Order.find().sort({ createdAt: -1 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const getOrderById = (req, res) => {
-  const order = orders.find(o => o._id === req.params.id);
-  if (!order) return res.status(404).json({ error: "Order not found" });
-  res.json(order);
+const getOrderById = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    res.json(order);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
-const updateOrderStatus = (req, res) => {
-  const idx = orders.findIndex(o => o._id === req.params.id);
-  if (idx === -1) return res.status(404).json({ error: "Order not found" });
-  orders[idx].status = req.body.status;
-  res.json(orders[idx]);
+const getMyOrders = async (req, res) => {
+  try {
+    res.json(await Order.find({ userId: req.user.userId }).sort({ createdAt: -1 }));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+const updateOrderStatus = async (req, res) => {
+  try {
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status: req.body.status },
+      { new: true }
+    );
+    if (!order) return res.status(404).json({ error: "Order not found" });
+    res.json(order);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+// ════════════════════════════════════════════════
+//  USER CONTROLLERS
+// ════════════════════════════════════════════════
+
+const getAllUsers = async (req, res) => {
+  try {
+    res.json(await User.find({}, "-otp -otpExpiry"));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
 module.exports = {
   getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getCategories,
-  registerUser, loginUser, getAllUsers,
-  createOrder, getAllOrders, getOrderById, updateOrderStatus,
+  sendOtp, verifyOtp,
+  createOrder, getAllOrders, getOrderById, getMyOrders, updateOrderStatus,
+  getAllUsers,
 };

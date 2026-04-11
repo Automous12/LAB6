@@ -1,37 +1,36 @@
 const express = require("express");
-const router = express.Router();
+const router  = express.Router();
+const multer  = require("multer");
+const upload  = multer({ storage: multer.memoryStorage() });
+
+const { authenticateToken, requireAdmin, optionalAuth } = require("./middleware/auth");
 const {
-  // products
   getAllProducts, getProductById, createProduct, updateProduct, deleteProduct, getCategories,
-  // users
-  registerUser, loginUser, getAllUsers,
-  // orders
-  createOrder, getAllOrders, getOrderById, updateOrderStatus,
+  sendOtp, verifyOtp,
+  createOrder, getAllOrders, getOrderById, getMyOrders, updateOrderStatus,
+  getAllUsers,
 } = require("./controllers");
 
-// ════════════════════════════════════════════════
-//  PRODUCT ROUTES  →  /api/products
-// ════════════════════════════════════════════════
-router.get   ("/products/categories",  getCategories);   // GET  /api/products/categories
-router.get   ("/products",             getAllProducts);   // GET  /api/products?category=&limit=
-router.get   ("/products/:id",         getProductById);  // GET  /api/products/:id
-router.post  ("/products",             createProduct);   // POST /api/products
-router.put   ("/products/:id",         updateProduct);   // PUT  /api/products/:id
-router.delete("/products/:id",         deleteProduct);   // DEL  /api/products/:id
+// ── PRODUCTS ──────────────────────────────────────────────────────────────────
+router.get   ("/products/categories",  getCategories);
+router.get   ("/products",             getAllProducts);
+router.get   ("/products/:id",         getProductById);
+router.post  ("/products",             authenticateToken, requireAdmin, upload.single("image"), createProduct);
+router.put   ("/products/:id",         authenticateToken, requireAdmin, upload.single("image"), updateProduct);
+router.delete("/products/:id",         authenticateToken, requireAdmin, deleteProduct);
 
-// ════════════════════════════════════════════════
-//  USER ROUTES  →  /api/users
-// ════════════════════════════════════════════════
-router.get ("/users",          getAllUsers);   // GET  /api/users
-router.post("/users/register", registerUser); // POST /api/users/register
-router.post("/users/login",    loginUser);    // POST /api/users/login
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+router.post("/auth/send-otp",   sendOtp);
+router.post("/auth/verify-otp", verifyOtp);
 
-// ════════════════════════════════════════════════
-//  ORDER ROUTES  →  /api/orders
-// ════════════════════════════════════════════════
-router.get  ("/orders",          getAllOrders);      // GET  /api/orders
-router.get  ("/orders/:id",      getOrderById);      // GET  /api/orders/:id
-router.post ("/orders",          createOrder);       // POST /api/orders
-router.patch("/orders/:id",      updateOrderStatus); // PATCH /api/orders/:id  { status }
+// ── ORDERS ────────────────────────────────────────────────────────────────────
+router.get  ("/orders/my",  authenticateToken, getMyOrders);
+router.get  ("/orders",     authenticateToken, requireAdmin, getAllOrders);
+router.get  ("/orders/:id", authenticateToken, getOrderById);
+router.post ("/orders",     optionalAuth, createOrder);
+router.patch("/orders/:id", authenticateToken, requireAdmin, updateOrderStatus);
+
+// ── USERS ─────────────────────────────────────────────────────────────────────
+router.get("/users", authenticateToken, requireAdmin, getAllUsers);
 
 module.exports = router;
