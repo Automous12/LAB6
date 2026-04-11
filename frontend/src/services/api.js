@@ -1,8 +1,8 @@
 import axios from "axios";
 
-// In dev: CRA proxy (package.json → "proxy") forwards /api → localhost:5000
-// In prod: Vercel routes /api → backend serverless function (same domain, no CORS)
-const API = axios.create({ baseURL: "/api" });
+const API = axios.create({ 
+  baseURL: process.env.REACT_APP_API_URL || "http://localhost:5000/api"
+});
 
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
@@ -23,11 +23,11 @@ export const sendOtp   = (phone)      => API.post("/auth/send-otp",   { phone })
 export const verifyOtp = (phone, otp) => API.post("/auth/verify-otp", { phone, otp });
 
 // Orders
-export const createOrder      = (data)    => API.post("/orders", data);
-export const getOrders        = ()        => API.get("/orders");
-export const getMyOrders      = ()        => API.get("/orders/my");
-export const getOrderById     = (id)      => API.get(`/orders/${id}`);
-export const updateOrderStatus= (id, s)   => API.patch(`/orders/${id}`, { status: s });
+export const createOrder       = (data)  => API.post("/orders", data);
+export const getOrders         = ()      => API.get("/orders");
+export const getMyOrders       = ()      => API.get("/orders/my");
+export const getOrderById      = (id)    => API.get(`/orders/${id}`);
+export const updateOrderStatus = (id, s) => API.patch(`/orders/${id}`, { status: s });
 
 // Users
 export const getAllUsers = () => API.get("/users");
